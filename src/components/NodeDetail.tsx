@@ -156,6 +156,12 @@ export function NodeDetail({
   authorized?: boolean
 }) {
   const [tab, setTab] = useState<TabKey>("resources")
+  const probeKey = useMemo(
+    () => node.probes.map((probe) => `${probe.id}=${probe.name}`).join("|"),
+    [node.probes],
+  )
+  const probeMeta = useMemo(() => node.probes.map(({ id, name }) => ({ id, name })), [probeKey])
+  const currentProbes = useMemo(() => node.probes, [probeKey])
   const availableRanges = useMemo(() => availableHistoryRanges(!authorized), [authorized])
   const resourceRanges = availableRanges
   const latencyRanges = availableRanges.filter((range) => range.hours <= 24)
@@ -175,7 +181,7 @@ export function NodeDetail({
     setFailed("")
     const points = Math.round(globalThis.innerWidth * (globalThis.devicePixelRatio || 1))
     const series = tab === "latency" ? "ping" : "metrics"
-    fetchHistory(node.id, hours, series, points, node.probes.map(({ id, name }) => ({ id, name })), node.probes)
+    fetchHistory(node.id, hours, series, points, probeMeta, currentProbes)
       .then((next) => {
         if (active) setData(next)
       })
@@ -188,7 +194,7 @@ export function NodeDetail({
     return () => {
       active = false
     }
-  }, [node.id, node.probes, hours, tab])
+  }, [node.id, probeMeta, currentProbes, hours, tab])
 
   const m = node.metrics
   const current = latencyText(latency)

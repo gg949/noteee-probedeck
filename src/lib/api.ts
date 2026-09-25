@@ -135,13 +135,14 @@ function parseLoad(value: unknown): [number, number, number] {
 }
 
 export function parseTrafficLimit(value: unknown): number {
-  if (typeof value === "number") return finite(value)
   const raw = String(value ?? "").trim().toLowerCase()
   if (!raw || raw === "-1") return 0
   const match = raw.match(/^([\d.]+)\s*(b|kb|mb|gb|tb|pb)?(?:\/mo(?:nth)?|\/月)?$/)
   if (!match) return 0
   const units: Record<string, number> = { b: 1, kb: 1024, mb: MB, gb: 1024 ** 3, tb: 1024 ** 4, pb: 1024 ** 5 }
-  return finite(Number(match[1])) * units[match[2] ?? "b"]
+  // ProbeDeck 后台的纯数字流量上限单位是 GB；无单位字符串也按 GB 处理。
+  const unit = match[2] ?? "gb"
+  return finite(Number(match[1])) * units[unit]
 }
 
 function normalizeCycle(value: unknown): string {
@@ -165,7 +166,9 @@ function normalizeCycle(value: unknown): string {
 
 function normalizeTrafficMode(value: unknown): string {
   const mode = String(value ?? "total")
-  if (mode === "up" || mode === "down" || mode === "max") return mode
+  if (mode === "ul" || mode === "up") return "up"
+  if (mode === "dl" || mode === "down") return "down"
+  if (mode === "max") return "max"
   return "sum"
 }
 
@@ -185,28 +188,36 @@ function parseExtraProbes(raw: unknown): Record<string, unknown> {
   }
 }
 
-const PROBE_IDS = ["ct", "cu", "cm", "bd", ...Array.from({ length: 16 }, (_, index) => `node_${index + 5}`)]
-const PROBE_DEFAULTS: Record<string, string> = { ct: "电信", cu: "联通", cm: "移动", bd: "BGP" }
+const PROBE_SLOTS = [
+  { id: "ct", nameField: "custom_ct_name", defaultName: "电信" },
+  { id: "cu", nameField: "custom_cu_name", defaultName: "联通" },
+  { id: "cm", nameField: "custom_cm_name", defaultName: "移动" },
+  { id: "bd", nameField: "custom_bd_name", defaultName: "BGP" },
+  ...Array.from({ length: 16 }, (_, index) => {
+    const n = index + 5
+    return { id: `node_${n}`, nameField: `node_${n}_name`, defaultName: `Node ${n}` }
+  }),
+]
 
 function normalizeProbes(raw: Record<string, unknown>): NodeProbe[] {
   const extra = parseExtraProbes(raw.extra_probes)
-  const source = Array.isArray(raw.probes) && raw.probes.length
-    ? raw.probes as Record<string, unknown>[]
-      : PROBE_IDS.flatMap((id) => {
-        const ping = raw[`ping_${id}`] ?? extra[`ping_${id}`]
-        if (ping === undefined || ping === false || ping === "false") return []
-        return [{ id, name: raw[`${id}_name`] ?? PROBE_DEFAULTS[id] ?? `探测 ${id.slice(-2)}`, ping, loss: raw[`loss_${id}`] ?? extra[`loss_${id}`] }]
-      })
-  return source.flatMap((item, index) => {
-    const id = String(item.id ?? "").trim()
-    if (!id) return []
-    const pingValue = item.ping ?? raw[`ping_${id}`] ?? extra[`ping_${id}`]
-    const lossValue = item.loss ?? raw[`loss_${id}`] ?? extra[`loss_${id}`]
-    const ping = pingValue === false || pingValue === "false" ? null : Number(pingValue)
+  const configured = Array.isArray(raw.probes)
+    ? new Map((raw.probes as Record<string, unknown>[]).map((item) => [String(item.id ?? ""), item]))
+    : new Map<string, Record<string, unknown>>()
+
+  return PROBE_SLOTS.flatMap((slot) => {
+    const item = configured.get(slot.id)
+    const pingValue = item?.ping ?? raw[`ping_${slot.id}`] ?? extra[`ping_${slot.id}`]
+    const lossValue = item?.loss ?? raw[`loss_${slot.id}`] ?? extra[`loss_${slot.id}`]
+    const disabled = pingValue === false || pingValue === "false"
+    const hasValue = pingValue !== undefined && !disabled
+    if (!item && !hasValue) return []
+
+    const ping = disabled ? null : Number(pingValue)
     const loss = lossValue === false || lossValue === "false" ? null : Number(lossValue)
     return [{
-      id,
-      name: String(item.name ?? raw[`${id}_name`] ?? `探测 ${index + 1}`),
+      id: slot.id,
+      name: String(item?.name ?? raw[slot.nameField] ?? runtimeConfig[slot.nameField] ?? slot.defaultName),
       ping: Number.isFinite(ping) ? ping : null,
       loss: Number.isFinite(loss) ? loss : null,
     }]
@@ -685,9 +696,10 @@ export function useLatency(nodes: Node[] | null): LatencyMap {
     () => (nodes ?? []).filter((node) => node.online).map((node) => node.id).sort().join(","),
     [nodes],
   )
+  const probeMetaKey = (nodes ?? []).map((node) => `${node.id}:${node.probes.map((probe) => `${probe.id}=${probe.name}`).join(",")}`).join("|")
   const probeMap = useMemo(
     () => new Map((nodes ?? []).map((node) => [node.id, { probes: node.probes, names: node.probes.map(({ id, name }) => ({ id, name })) }])),
-    [nodes],
+    [probeMetaKey],
   )
 
   useEffect(() => {
@@ -728,7 +740,7 @@ export function useLatency(nodes: Node[] | null): LatencyMap {
       stopped = true
       clearInterval(timer)
     }
-  }, [ids, probeMap])
+  }, [ids, probeMetaKey])
 
   return stats
 }
