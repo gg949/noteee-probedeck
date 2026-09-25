@@ -78,7 +78,8 @@ const old = normalizeServer({
   disk_total: 10240, disk_used: 2048, cpu_cores: 2, cpu_info: "CPU A", os: "Debian 12",
   kernel_version: "6.1", arch: "x86_64", net_in_speed: 10, net_out_speed: 20,
   net_rx: 100, net_tx: 200, net_rx_monthly: 300, net_tx_monthly: 400,
-  load_avg: "0.1 0.2 0.3", probes: [{ id: "ct", name: "电信", ping: 20, loss: 0 }],
+  load_avg: "0.1 0.2 0.3", traffic_limit: 100, traffic_calc_type: "total", show_traffic: false,
+  probes: [{ id: "ct", name: "电信", ping: 20, loss: 0 }],
 })
 const updated = applyBatchUpdate(old, { cpu: 55, ram_used: 700, net_in_speed: 900, ping_ct: 31 }, now, 300)
 assert.equal(updated.name, "old")
@@ -92,6 +93,9 @@ assert.equal(updated.metrics?.net_tx, 20)
 assert.equal(updated.probes[0].ping, 31)
 assert.equal(updated.probes[0].name, "电信")
 assert.equal(updated.metrics?.uptime, 10)
+assert.equal(updated.traffic_limit, 100 * 1024 ** 3)
+assert.equal(updated.traffic_mode, "sum")
+assert.equal(updated.show_traffic, false)
 console.log("坏报告不会拖垮整页")
 
 function history(ping: PingPoint[], loss: Record<string, number> = {}): History {

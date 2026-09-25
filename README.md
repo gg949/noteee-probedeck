@@ -22,6 +22,12 @@ https://github.com/gg949/noteee-probedeck/tree/main/dist
 4. 保存并启用。首次切换后等待约 1 分钟，或重启面板清理主题内存缓存。
 5. 浏览器硬刷新；如果前面接 Cloudflare，再清理 Cloudflare 缓存。
 
+## 后端兼容范围
+
+- **ProbeDeck 2.13+**：支持 24 个探测点、批量历史接口、扩展 Ping 字段和 WebSocket 增量更新。
+- **CF Server Monitor（CF 原版面板/官方探针）**：支持旧 8 个探测点、主题选项、历史接口和 WebSocket；最高显示后端支持的 7 天历史。
+- CF 原版不提供 `node_5`～`node_20` 和 `probes[]`，因此只显示旧 8 个点，这是后端能力限制，不是主题故障。
+
 ## 预览
 
 | 浅色 | 深色 |

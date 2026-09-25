@@ -80,6 +80,7 @@ export type SiteConfig = {
   online_threshold_seconds: number
   public_history_hours: number
   frontend_ws_timeout_minutes: number
+  max_history_hours: number
   theme_options?: Record<string, unknown>
   [key: string]: unknown
 }
@@ -90,6 +91,7 @@ const DEFAULTS: SiteConfig = {
   online_threshold_seconds: 300,
   public_history_hours: 24,
   frontend_ws_timeout_minutes: 0,
+  max_history_hours: 168,
   theme_options: {},
 }
 
@@ -115,7 +117,9 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
 export async function loadSiteConfig(): Promise<SiteConfig> {
   try {
-    runtimeConfig = { ...DEFAULTS, ...(await api<Partial<SiteConfig>>("/api/config")) }
+    const raw = await api<Partial<SiteConfig>>("/api/config")
+    const isProbeDeck = Object.prototype.hasOwnProperty.call(raw, "public_history_hours")
+    runtimeConfig = { ...DEFAULTS, ...raw, max_history_hours: isProbeDeck ? 720 : 168 }
   } catch {
     runtimeConfig = DEFAULTS
   }
@@ -386,7 +390,28 @@ export function applyBatchUpdate(current: Node, patch: Record<string, unknown>, 
         ping: patch[`ping_${probe.id}`] ?? patch[probe.id] ?? probe.ping,
         loss: patch[`loss_${probe.id}`] ?? probe.loss,
       }))
-  return normalizeServer({ ...next, probes: probeValues }, threshold)
+  const normalized = normalizeServer({ ...next, probes: probeValues }, threshold)
+  return {
+    ...normalized,
+    name: current.name,
+    sort: current.sort,
+    country: current.country,
+    price: current.price,
+    currency: current.currency,
+    billing_cycle: current.billing_cycle,
+    expires_at: current.expires_at,
+    traffic_limit: current.traffic_limit,
+    traffic_mode: current.traffic_mode,
+    traffic_reset_day: current.traffic_reset_day,
+    day_rx: current.day_rx,
+    day_tx: current.day_tx,
+    show_price: current.show_price,
+    show_expire: current.show_expire,
+    show_traffic: current.show_traffic,
+    hostname: current.hostname,
+    ip: current.ip,
+    remark: current.remark,
+  }
 }
 
 export function useNodes() {
@@ -560,7 +585,7 @@ export const HISTORY_RANGES = [
 ] as const
 
 export function availableHistoryRanges(publicOnly: boolean): typeof HISTORY_RANGES[number][] {
-  const max = publicOnly ? finite(runtimeConfig.public_history_hours, 24) : 720
+  const max = publicOnly ? finite(runtimeConfig.public_history_hours, 24) : finite(runtimeConfig.max_history_hours, 168)
   return HISTORY_RANGES.filter((range) => range.hours <= max)
 }
 
