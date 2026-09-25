@@ -14,7 +14,7 @@
 3. 填入：
 
 ```text
-https://github.com/<你的用户名>/<仓库名>/tree/main/dist
+https://github.com/gg949/noteee-probedeck/tree/main/dist
 ```
 
 > 不要填仓库根地址；ProbeDeck 需要的是构建产物 `dist/`。

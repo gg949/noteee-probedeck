@@ -8,8 +8,8 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
-dist
-dist-ssr
+# dist/ 是 ProbeDeck 主题链接直接使用的构建产物，必须提交到仓库
+# dist-ssr
 release
 *.local
 
