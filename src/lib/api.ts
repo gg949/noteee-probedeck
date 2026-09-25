@@ -537,10 +537,36 @@ export type History = {
   ping: PingPoint[]
   probes: Record<string, string>
   loss?: Record<string, number>
+  dayRx?: number | null
+  dayTx?: number | null
 }
 
 function nearestAllowedHours(hours: number): number {
   return ALLOWED_HOURS.find((allowed) => hours <= allowed) ?? 720
+}
+
+/**
+ * 今日流量：面板历史表里的 net_rx / net_tx 是累计计数器，今日用量 = 今天第一条与最后一条的差值。
+ * 注意当前面板的 /api/history/all 默认不返回这两列，需要服务端把 'net_rx','net_tx' 加进
+ * HISTORY_ALL_QUERY_COLUMNS（见 ProbeDeck src/utils/historyFields.js）才会有数据；
+ * 取不到行或字段时返回 null，调用方退回占位文案。跨月重置导致差值为负时退回最后一条（重置后累计）。
+ */
+function todayTrafficDelta(rows: Record<string, unknown>[], field: "net_rx" | "net_tx"): number | null {
+  const dayStart = new Date()
+  dayStart.setHours(0, 0, 0, 0)
+  const from = dayStart.getTime()
+  let first: number | null = null
+  let last: number | null = null
+  for (const row of rows) {
+    const ts = Number(row.timestamp)
+    const value = Number(row[field])
+    if (!Number.isFinite(ts) || !Number.isFinite(value) || ts < from) continue
+    if (first === null) first = value
+    last = value
+  }
+  if (first === null || last === null) return null
+  const delta = last - first
+  return delta >= 0 ? delta : last
 }
 
 function historyRowsToPing(rows: Record<string, unknown>[], probes: ProbeMeta[], current: NodeProbe[]): History {
@@ -599,7 +625,13 @@ export async function fetchHistory(
 ): Promise<History> {
   const safeHours = nearestAllowedHours(hours)
   const rows = await api<Record<string, unknown>[]>(`/api/history/all?id=${encodeURIComponent(id)}&hours=${safeHours}`)
-  if (series === "ping") return historyRowsToPing(rows, probes, current)
+  if (series === "ping") {
+    return {
+      ...historyRowsToPing(rows, probes, current),
+      dayRx: todayTrafficDelta(rows, "net_rx"),
+      dayTx: todayTrafficDelta(rows, "net_tx"),
+    }
+  }
   return {
     metrics: rows.map((row) => ({
       ts: Math.floor(Number(row.timestamp) / 1000),
@@ -616,7 +648,7 @@ export async function fetchHistory(
 
 export type LatencyHour = { ts: number; latency: number | null; loss: number | null }
 export type ProbeStat = { id: number; name: string; latency: number | null; jitter: number | null; loss: number; min: number | null; max: number | null; hours: LatencyHour[]; avgLatency: number | null; avgLoss: number | null }
-export type Latency = { latency: number | null; loss: number; probe: string; jitter: number | null; probes: ProbeStat[]; hours: LatencyHour[]; avgLatency: number | null; avgLoss: number | null; none?: boolean; failed?: boolean }
+export type Latency = { latency: number | null; loss: number; probe: string; jitter: number | null; probes: ProbeStat[]; hours: LatencyHour[]; avgLatency: number | null; avgLoss: number | null; none?: boolean; failed?: boolean; dayRx?: number | null; dayTx?: number | null }
 export type LatencyMap = Record<string, Latency>
 
 function jitterOf(values: (number | null)[]): number | null {
@@ -718,9 +750,10 @@ export function summarizePing(history: History): Latency {
   const alive = probes.filter((probe) => probe.latency !== null)
   const pick = alive.reduce<ProbeStat | null>((best, probe) => best === null || (probe.latency as number) < (best.latency as number) ? probe : best, null)
 
-  if (probes.length === 0) return { latency: null, loss: 0, probe: "", jitter: null, probes, hours, avgLatency, avgLoss, none: true }
-  if (!pick) return { latency: null, loss: 100, probe: probes[0].name, jitter: probes[0].jitter, probes, hours, avgLatency, avgLoss }
-  return { latency: pick.latency, loss: pick.loss, probe: pick.name, jitter: pick.jitter, probes, hours, avgLatency, avgLoss }
+  const day = { dayRx: history.dayRx ?? null, dayTx: history.dayTx ?? null }
+  if (probes.length === 0) return { latency: null, loss: 0, probe: "", jitter: null, probes, hours, avgLatency, avgLoss, none: true, ...day }
+  if (!pick) return { latency: null, loss: 100, probe: probes[0].name, jitter: probes[0].jitter, probes, hours, avgLatency, avgLoss, ...day }
+  return { latency: pick.latency, loss: pick.loss, probe: pick.name, jitter: pick.jitter, probes, hours, avgLatency, avgLoss, ...day }
 }
 
 const CONCURRENCY = 2

@@ -111,8 +111,11 @@ export function Summary({
 }) {
   const monthRx = nodes.reduce((sum, n) => sum + n.month_rx, 0)
   const monthTx = nodes.reduce((sum, n) => sum + n.month_tx, 0)
-  const dayRx = nodes.reduce((sum, n) => sum + n.day_rx, 0)
-  const dayTx = nodes.reduce((sum, n) => sum + n.day_tx, 0)
+  // 今日流量：面板历史表里的 net_rx/net_tx 是累计计数器，主题按「今天第一条 → 最后一条」的差值算，
+  // 结果复用同一次 /api/history/all 请求（挂在 latency map 上）。面板没返回这两列时为 null，
+  // 退回 Node 上的 day_rx/day_tx（ProbeDeck 目前恒为 0），下方显示占位说明。
+  const dayRx = nodes.reduce((sum, n) => sum + (latency[n.id]?.dayRx ?? n.day_rx), 0)
+  const dayTx = nodes.reduce((sum, n) => sum + (latency[n.id]?.dayTx ?? n.day_tx), 0)
   // 每个节点按自己的计费模式（上下行 / 取大 / 单向）折算后再合计
   const monthTotal = nodes.reduce((sum, n) => sum + monthUsage(n), 0)
   const monthLimit = nodes.reduce((sum, n) => sum + (n.show_traffic === false ? 0 : Math.max(0, n.traffic_limit)), 0)
@@ -121,7 +124,17 @@ export function Summary({
   const lats = nodes
     .map((n) => latency[n.id])
     .filter((l): l is Latency => !!l && !l.failed && !l.none && l.latency !== null)
-  const avg = lats.length > 0 ? lats.reduce((s, l) => s + (l.latency ?? 0), 0) / lats.length : null
+  // 「平均延迟」必须是各条线路的平均：l.latency 是这台机器所有探测点里最快的那个（最快线路），
+  // 直接平均会把 1ms 的 CF 线路当成整台机器的延迟。这里改成「每台机器先对自己的线路取平均」，
+  // 线路全空时退回窗口均值 avgLatency，再退回最快线路。
+  const nodeAvg = (l: Latency): number | null => {
+    const values = l.probes.map((p) => p.latency).filter((v): v is number => v !== null)
+    if (values.length > 0) return values.reduce((s, v) => s + v, 0) / values.length
+    return l.avgLatency ?? l.latency
+  }
+  const avgs = lats.map(nodeAvg).filter((v): v is number => v !== null)
+  const avg = avgs.length > 0 ? avgs.reduce((s, v) => s + v, 0) / avgs.length : null
+  const probeCount = lats.reduce((s, l) => s + l.probes.filter((p) => p.latency !== null).length, 0)
   const now = speedHistory.at(-1) ?? { rx: 0, tx: 0 }
   const spend = monthlySpend(nodes.filter((node) => node.show_price !== false))
 
@@ -182,7 +195,7 @@ export function Summary({
         <Tile icon={Activity} label="平均延迟" tone="ok">
           <div className="ink text-xl font-semibold">{avg === null ? "—" : `${Math.round(avg)} ms`}</div>
           <div className="truncate text-[11px] text-muted-foreground">
-            {lats.length > 0 ? `来自 ${lats.length} 个探测节点` : "等待探测数据"}
+            {lats.length > 0 ? `来自 ${lats.length} 个节点 · ${probeCount} 条线路` : "等待探测数据"}
           </div>
         </Tile>
       )}
