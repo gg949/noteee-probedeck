@@ -151,17 +151,6 @@ function Footer({ nodes, updatedAt }: { nodes: Node[] | null; updatedAt: number 
         >
           主题源码
         </a>
-        <span className="ink">
-          移植自{" "}
-          <a
-            href="https://github.com/bluesmkun/noteee"
-            target="_blank"
-            rel="noreferrer"
-            className="underline decoration-dotted underline-offset-2 transition-colors hover:text-foreground"
-          >
-            bluesmkun/noteee
-          </a>
-        </span>
       </div>
     </footer>
   )
