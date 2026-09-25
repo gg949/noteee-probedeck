@@ -1,0 +1,98 @@
+import manifest from "../../theme.json"
+
+/**
+ * 站点级设置（公告、纸张色调、显示哪些区块）通过 ProbeDeck `theme_options` 读写。
+ * 访客自己的偏好（深浅色、视图、排序）不属于这里，走 localStorage。
+ */
+
+type Field = {
+  key: string
+  type: string
+  default: unknown
+  options?: { value: string; label?: string }[]
+  min?: number
+  max?: number
+}
+
+/** 和面板同一套取值检查。保存的值可能来自这个主题的旧版本，对不上就当没保存过 */
+function fits(field: Field, value: unknown): boolean {
+  switch (field.type) {
+    case "boolean":
+      return typeof value === "boolean"
+    case "number":
+      return (
+        typeof value === "number" &&
+        Number.isFinite(value) &&
+        value >= (field.min ?? -Infinity) &&
+        value <= (field.max ?? Infinity)
+      )
+    case "select":
+      return !!field.options?.some((option) => option.value === value)
+    default:
+      return typeof value === "string"
+  }
+}
+
+/** 分组标题（type 为 title）不存值 */
+export const fields = (manifest.config as Field[]).filter((field) => field.type !== "title")
+
+export const SHORT = manifest.short
+export const VERSION = manifest.version
+
+export type Paper = "cream" | "mint" | "kraft"
+export type Layout = "grid" | "list"
+
+/**
+ * 纸张色调的取值与中文名都从 theme.json 读，不在代码里再抄一遍 ——
+ * 主界面上那个切换器和面板里的「主题设置」因此永远是同一份定义。
+ */
+export const PAPER_OPTIONS = (fields.find((field) => field.key === "paper")?.options ?? []) as {
+  value: Paper
+  label: string
+}[]
+export const PAPERS = PAPER_OPTIONS.map((option) => option.value)
+
+export type ThemeConfig = {
+  notice: string
+  layout: Layout
+  paper: Paper
+  show_map: boolean
+  show_latency: boolean
+  show_cost: boolean
+}
+
+export const DEFAULTS = Object.fromEntries(
+  fields.map((field) => [field.key, field.default]),
+) as unknown as ThemeConfig
+
+/** 从没保存过、断网、hub 太旧（404）或公开页关闭（401）一律按默认值渲染，不报错也不提示 */
+export async function loadConfig(): Promise<ThemeConfig> {
+  let saved: Record<string, unknown> = {}
+  try {
+    const next = await fetch("/api/config")
+    if (next.ok) saved = ((await next.json()) as { theme_options?: Record<string, unknown> }).theme_options ?? {}
+  } catch {
+    // 断网同样按默认值
+  }
+  const pick = (field: Field) => (fits(field, saved[field.key]) ? saved[field.key] : field.default)
+  return Object.fromEntries(fields.map((field) => [field.key, pick(field)])) as unknown as ThemeConfig
+}
+
+/** 接在 loadConfig 之后：站长登录时才能保存（主题要已装在 hub 上），失败要让站长看到 */
+export async function saveConfig(values: Record<string, unknown>): Promise<void> {
+  const config = await fetch("/api/config")
+  if (!config.ok) throw new Error(await config.text())
+  const current = ((await config.json()) as { theme_options?: Record<string, unknown> }).theme_options ?? {}
+  const next = { ...current }
+  // 只改声明过的项，其余 key 原样留下；等于默认值的删掉
+  for (const field of fields) {
+    if (values[field.key] === field.default) delete next[field.key]
+    else next[field.key] = values[field.key]
+  }
+  const res = await fetch("/api/theme_options", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ theme_options: next }),
+  })
+  if (!res.ok) throw new Error(await res.text())
+}
