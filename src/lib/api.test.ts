@@ -55,6 +55,22 @@ assert.equal(normalized.metrics?.load[2], 0.3)
 assert.equal(parseTrafficLimit("1TB"), 1024 ** 4)
 assert.equal(parseTrafficLimit("500GB/mo"), 500 * 1024 ** 3)
 assert.equal(parseTrafficLimit(""), 0)
+assert.equal(parseTrafficLimit(100), 100 * 1024 ** 3)
+
+const mergedSlots = normalizeServer({
+  id: "00000000-0000-4000-8000-000000000004", name: "slots", last_updated: now,
+  ram_total: 1024, ram_used: 512, disk_total: 10240, disk_used: 1024, cpu_cores: 1,
+  ping_ct: 10, ping_cu: 11, ping_cm: 12, ping_bd: 13, ping_node_1: 14, ping_node_2: 15, ping_node_3: 16, ping_node_4: 17,
+  custom_ct: "1.1.1.1", custom_cu: "1.1.1.1", custom_cm: "1.1.1.1", custom_bd: "1.1.1.1",
+  node_1: "1.1.1.1", node_2: "1.1.1.1", node_3: "1.1.1.1", node_4: "1.1.1.1", node_5: "0", node_6: "",
+  probes: [{ id: "node_20", name: "扩展 20", ping: 20, loss: 0 }],
+})
+assert.equal(mergedSlots.probes.length, 9)
+assert.equal(mergedSlots.probes[0].id, "ct")
+assert.equal(mergedSlots.probes[7].id, "node_4")
+assert.equal(mergedSlots.probes[8].id, "node_20")
+assert.equal(mergedSlots.probes.some((probe) => probe.id === "node_5"), false)
+assert.equal(mergedSlots.probes.some((probe) => probe.id === "node_6"), false)
 
 const old = normalizeServer({
   id: "00000000-0000-4000-8000-000000000003", name: "old", last_updated: now - 1000,

@@ -189,15 +189,23 @@ function parseExtraProbes(raw: unknown): Record<string, unknown> {
 }
 
 const PROBE_SLOTS = [
-  { id: "ct", nameField: "custom_ct_name", defaultName: "电信" },
-  { id: "cu", nameField: "custom_cu_name", defaultName: "联通" },
-  { id: "cm", nameField: "custom_cm_name", defaultName: "移动" },
-  { id: "bd", nameField: "custom_bd_name", defaultName: "BGP" },
+  { id: "ct", hostField: "custom_ct", nameField: "custom_ct_name", defaultName: "电信" },
+  { id: "cu", hostField: "custom_cu", nameField: "custom_cu_name", defaultName: "联通" },
+  { id: "cm", hostField: "custom_cm", nameField: "custom_cm_name", defaultName: "移动" },
+  { id: "bd", hostField: "custom_bd", nameField: "custom_bd_name", defaultName: "BGP" },
+  { id: "node_1", hostField: "node_1", nameField: "node_1_name", defaultName: "Node 1" },
+  { id: "node_2", hostField: "node_2", nameField: "node_2_name", defaultName: "Node 2" },
+  { id: "node_3", hostField: "node_3", nameField: "node_3_name", defaultName: "Node 3" },
+  { id: "node_4", hostField: "node_4", nameField: "node_4_name", defaultName: "Node 4" },
   ...Array.from({ length: 16 }, (_, index) => {
     const n = index + 5
-    return { id: `node_${n}`, nameField: `node_${n}_name`, defaultName: `Node ${n}` }
+    return { id: `node_${n}`, hostField: `node_${n}`, nameField: `node_${n}_name`, defaultName: `Node ${n}` }
   }),
 ]
+
+function hostIsHidden(value: unknown): boolean {
+  return value !== undefined && (String(value).trim() === "" || String(value).trim() === "0")
+}
 
 function normalizeProbes(raw: Record<string, unknown>): NodeProbe[] {
   const extra = parseExtraProbes(raw.extra_probes)
@@ -207,6 +215,8 @@ function normalizeProbes(raw: Record<string, unknown>): NodeProbe[] {
 
   return PROBE_SLOTS.flatMap((slot) => {
     const item = configured.get(slot.id)
+    const hostValue = item?.host ?? raw[slot.hostField]
+    if (hostIsHidden(hostValue)) return []
     const pingValue = item?.ping ?? raw[`ping_${slot.id}`] ?? extra[`ping_${slot.id}`]
     const lossValue = item?.loss ?? raw[`loss_${slot.id}`] ?? extra[`loss_${slot.id}`]
     const disabled = pingValue === false || pingValue === "false"

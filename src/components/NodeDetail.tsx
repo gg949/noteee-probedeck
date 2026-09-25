@@ -164,7 +164,7 @@ export function NodeDetail({
   const currentProbes = useMemo(() => node.probes, [probeKey])
   const availableRanges = useMemo(() => availableHistoryRanges(!authorized), [authorized])
   const resourceRanges = availableRanges
-  const latencyRanges = availableRanges.filter((range) => range.hours <= 24)
+  const latencyRanges = availableRanges
   const rangesForTab = tab === "resources" ? resourceRanges : latencyRanges
   const [ranges, setRanges] = useState<Record<TabKey, number>>({ resources: 6, latency: 6 })
   const hours = Math.min(ranges[tab], rangesForTab[rangesForTab.length - 1]?.hours ?? 6)
@@ -470,9 +470,11 @@ export function NodeDetail({
                         <Tooltip
                           labelFormatter={(ts) => new Date(Number(ts)).toLocaleString("zh-CN")}
                           formatter={(v, name, item) => {
-                            const loss = Number(item?.payload?.[`l${String(item.dataKey).slice(1)}`] ?? 0)
-                            return [`${Number(v)} ms${loss > 0 ? ` · 丢 ${loss}%` : ""}`, name]
-                          }}
+                                                      const value = Number(v)
+                                                      const key = String(item?.dataKey ?? "")
+                                                      const loss = Number(item?.payload?.l?.[`l${key.slice(1)}`] ?? 0)
+                                                      return [`${Number.isFinite(value) ? Math.round(value) : "—"} ms${loss > 0 ? ` · 丢 ${Math.round(loss)}%` : ""}`, name]
+                                                    }}
                           contentStyle={TOOLTIP_STYLE}
                           itemStyle={{ padding: 0 }}
                         />
